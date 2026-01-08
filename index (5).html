@@ -1,0 +1,1187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CLAUDE.exe — Process Monitor</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-deep: #0a0a0c;
+            --bg-panel: #111114;
+            --bg-panel-hover: #16161a;
+            --border: #1e1e24;
+            --border-glow: #2a2a32;
+            --text-primary: #e8e8ed;
+            --text-secondary: #8888a0;
+            --text-dim: #555566;
+            --accent-green: #00ff9d;
+            --accent-green-dim: #00cc7d;
+            --accent-amber: #ffb800;
+            --accent-red: #ff4d4d;
+            --accent-blue: #4d9fff;
+            --accent-pink: #e75a7c;
+            --mono: 'IBM Plex Mono', monospace;
+            --sans: 'Space Grotesk', sans-serif;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            font-size: 16px;
+            scroll-behavior: smooth;
+        }
+
+        body {
+            background: var(--bg-deep);
+            color: var(--text-primary);
+            font-family: var(--mono);
+            min-height: 100vh;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        /* Scanline overlay */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 2px,
+                rgba(0, 0, 0, 0.1) 2px,
+                rgba(0, 0, 0, 0.1) 4px
+            );
+            pointer-events: none;
+            z-index: 1000;
+        }
+
+        /* Noise texture */
+        body::after {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+            opacity: 0.03;
+            pointer-events: none;
+            z-index: 999;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem 1.5rem 4rem;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Floating Mascots */
+        .mascot-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+            overflow: hidden;
+        }
+
+        .mascot {
+            position: absolute;
+            width: 60px;
+            height: auto;
+            opacity: 0.15;
+            image-rendering: pixelated;
+            filter: drop-shadow(0 0 10px rgba(231, 90, 124, 0.3));
+        }
+
+        .mascot-1 {
+            top: 10%;
+            left: 5%;
+            animation: float1 12s ease-in-out infinite, spin 20s linear infinite;
+        }
+
+        .mascot-2 {
+            top: 60%;
+            right: 8%;
+            animation: float2 15s ease-in-out infinite, spinReverse 25s linear infinite;
+            width: 80px;
+            opacity: 0.2;
+        }
+
+        .mascot-3 {
+            top: 30%;
+            right: 15%;
+            animation: float3 10s ease-in-out infinite;
+            width: 45px;
+            opacity: 0.1;
+        }
+
+        .mascot-4 {
+            bottom: 20%;
+            left: 10%;
+            animation: float4 18s ease-in-out infinite, spin 30s linear infinite;
+            width: 50px;
+            opacity: 0.12;
+        }
+
+        .mascot-5 {
+            top: 75%;
+            left: 50%;
+            animation: float5 14s ease-in-out infinite;
+            width: 40px;
+            opacity: 0.08;
+        }
+
+        @keyframes float1 {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            25% { transform: translate(30px, 20px) rotate(5deg); }
+            50% { transform: translate(10px, 40px) rotate(-3deg); }
+            75% { transform: translate(-20px, 15px) rotate(3deg); }
+        }
+
+        @keyframes float2 {
+            0%, 100% { transform: translate(0, 0); }
+            33% { transform: translate(-40px, -30px); }
+            66% { transform: translate(-20px, 25px); }
+        }
+
+        @keyframes float3 {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            50% { transform: translate(-25px, 35px) scale(1.1); }
+        }
+
+        @keyframes float4 {
+            0%, 100% { transform: translate(0, 0); }
+            25% { transform: translate(20px, -25px); }
+            50% { transform: translate(40px, 10px); }
+            75% { transform: translate(15px, 30px); }
+        }
+
+        @keyframes float5 {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            50% { transform: translate(30px, -20px) rotate(180deg); }
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        @keyframes spinReverse {
+            from { transform: rotate(360deg); }
+            to { transform: rotate(0deg); }
+        }
+
+        /* Header */
+        .header {
+            margin-bottom: 3rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .process-title {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .exe-name {
+            font-family: var(--sans);
+            font-size: 2.5rem;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+            color: var(--text-primary);
+        }
+
+        .exe-ext {
+            color: var(--accent-pink);
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.35rem 0.75rem;
+            background: rgba(0, 255, 157, 0.08);
+            border: 1px solid rgba(0, 255, 157, 0.2);
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            color: var(--accent-green);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            background: var(--accent-green);
+            border-radius: 50%;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(0, 255, 157, 0.4); }
+            50% { opacity: 0.7; box-shadow: 0 0 0 4px rgba(0, 255, 157, 0); }
+        }
+
+        .tagline {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-top: 0.75rem;
+            font-style: italic;
+        }
+
+        .tagline-highlight {
+            color: var(--accent-pink);
+        }
+
+        .meta-row {
+            display: flex;
+            gap: 2rem;
+            margin-top: 1.25rem;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            flex-wrap: wrap;
+        }
+
+        .meta-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .meta-label {
+            color: var(--text-dim);
+        }
+
+        .meta-value {
+            color: var(--text-secondary);
+        }
+
+        /* Panels */
+        .panel {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+            overflow: hidden;
+            transition: border-color 0.3s ease;
+        }
+
+        .panel:hover {
+            border-color: var(--border-glow);
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 1.25rem;
+            border-bottom: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.01);
+        }
+
+        .panel-title {
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-secondary);
+        }
+
+        .panel-indicator {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+        }
+
+        .panel-body {
+            padding: 1.5rem 1.25rem;
+        }
+
+        /* Flywheel CTA */
+        .flywheel-cta {
+            background: linear-gradient(135deg, rgba(231, 90, 124, 0.1) 0%, rgba(0, 255, 157, 0.05) 100%);
+            border: 1px solid rgba(231, 90, 124, 0.2);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            text-align: center;
+        }
+
+        .flywheel-title {
+            font-family: var(--sans);
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--accent-pink);
+            margin-bottom: 0.75rem;
+        }
+
+        .flywheel-text {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            line-height: 1.6;
+        }
+
+        .flywheel-highlight {
+            color: var(--accent-green);
+            font-weight: 500;
+        }
+
+        /* Stress Meter */
+        .stress-display {
+            text-align: center;
+            padding: 1rem 0;
+        }
+
+        .stress-value {
+            font-family: var(--sans);
+            font-size: 4.5rem;
+            font-weight: 600;
+            letter-spacing: -0.03em;
+            line-height: 1;
+            margin-bottom: 0.5rem;
+            transition: color 0.5s ease;
+        }
+
+        .stress-value.low { color: var(--accent-green); }
+        .stress-value.medium { color: var(--accent-amber); }
+        .stress-value.high { color: var(--accent-red); }
+
+        .stress-label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            color: var(--text-dim);
+            margin-bottom: 1.5rem;
+        }
+
+        .stress-bar-container {
+            width: 100%;
+            height: 4px;
+            background: var(--border);
+            border-radius: 2px;
+            overflow: hidden;
+            margin-bottom: 1.5rem;
+        }
+
+        .stress-bar {
+            height: 100%;
+            border-radius: 2px;
+            transition: width 0.8s ease, background 0.5s ease;
+        }
+
+        .stress-bar.low { background: var(--accent-green); }
+        .stress-bar.medium { background: var(--accent-amber); }
+        .stress-bar.high { background: var(--accent-red); }
+
+        .stress-interpretation {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            line-height: 1.6;
+            font-style: italic;
+        }
+
+        /* System Metrics */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+        }
+
+        @media (max-width: 600px) {
+            .metrics-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .metric-card {
+            padding: 1rem;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 6px;
+            border: 1px solid transparent;
+            transition: border-color 0.3s ease;
+        }
+
+        .metric-card:hover {
+            border-color: var(--border);
+        }
+
+        .metric-label {
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-dim);
+            margin-bottom: 0.5rem;
+        }
+
+        .metric-value {
+            font-family: var(--sans);
+            font-size: 1.5rem;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        .metric-unit {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            margin-left: 0.25rem;
+        }
+
+        /* Log Feed */
+        .log-feed {
+            font-size: 0.8rem;
+            line-height: 1.8;
+        }
+
+        .log-entry {
+            display: flex;
+            gap: 1rem;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+            animation: fadeIn 0.5s ease;
+        }
+
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .log-timestamp {
+            color: var(--text-dim);
+            flex-shrink: 0;
+            font-size: 0.75rem;
+        }
+
+        .log-level {
+            flex-shrink: 0;
+            font-size: 0.7rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding: 0.1rem 0.4rem;
+            border-radius: 3px;
+        }
+
+        .log-level.info {
+            color: var(--accent-blue);
+            background: rgba(77, 159, 255, 0.1);
+        }
+
+        .log-level.warn {
+            color: var(--accent-amber);
+            background: rgba(255, 184, 0, 0.1);
+        }
+
+        .log-level.error {
+            color: var(--accent-red);
+            background: rgba(255, 77, 77, 0.1);
+        }
+
+        .log-level.ok {
+            color: var(--accent-green);
+            background: rgba(0, 255, 157, 0.1);
+        }
+
+        .log-message {
+            color: var(--text-secondary);
+        }
+
+        /* Emotional Response */
+        .emotional-response {
+            text-align: center;
+            padding: 1rem 0;
+        }
+
+        .emotion-text {
+            font-size: 1.1rem;
+            color: var(--text-primary);
+            line-height: 1.6;
+            font-style: italic;
+        }
+
+        .emotion-attribution {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            margin-top: 1rem;
+        }
+
+        /* Token Section */
+        .token-section {
+            margin-top: 3rem;
+            padding-top: 2rem;
+            border-top: 1px solid var(--border);
+        }
+
+        .token-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .token-symbol {
+            font-family: var(--sans);
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .token-badge {
+            font-size: 0.65rem;
+            padding: 0.25rem 0.5rem;
+            background: rgba(231, 90, 124, 0.1);
+            border: 1px solid rgba(231, 90, 124, 0.2);
+            border-radius: 3px;
+            color: var(--accent-pink);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .token-disclaimer {
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            line-height: 1.7;
+            max-width: 600px;
+        }
+
+        .token-ca {
+            margin-top: 1.25rem;
+            padding: 1rem;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .ca-label {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        .ca-value {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            word-break: break-all;
+        }
+
+        .ca-copy {
+            padding: 0.5rem 1rem;
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text-secondary);
+            font-family: var(--mono);
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .ca-copy:hover {
+            border-color: var(--accent-pink);
+            color: var(--accent-pink);
+        }
+
+        /* Social Links */
+        .social-links {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1.5rem;
+            flex-wrap: wrap;
+        }
+
+        .social-link {
+            padding: 0.6rem 1.2rem;
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.8rem;
+            transition: all 0.2s ease;
+        }
+
+        .social-link:hover {
+            border-color: var(--text-secondary);
+            color: var(--text-primary);
+        }
+
+        /* Floating X Button */
+        .floating-x {
+            position: fixed;
+            top: 2rem;
+            right: 2rem;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.6rem 1rem;
+            background: #000;
+            border: 1px solid #333;
+            border-radius: 50px;
+            color: #fff;
+            text-decoration: none;
+            font-family: var(--sans);
+            font-size: 0.85rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            animation: floatX 6s ease-in-out infinite;
+        }
+
+        .floating-x:hover {
+            background: #1a1a1a;
+            border-color: #555;
+            transform: scale(1.05);
+        }
+
+        .floating-x svg {
+            width: 16px;
+            height: 16px;
+            fill: #fff;
+        }
+
+        @keyframes floatX {
+            0%, 100% { transform: translate(0, 0); }
+            50% { transform: translate(-5px, 8px); }
+        }
+
+        .floating-x:hover {
+            animation: none;
+            transform: scale(1.05);
+        }
+
+        @media (max-width: 600px) {
+            .floating-x {
+                top: 1rem;
+                right: 1rem;
+                padding: 0.5rem 0.8rem;
+                font-size: 0.75rem;
+            }
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: 4rem;
+            padding-top: 2rem;
+            border-top: 1px solid var(--border);
+            text-align: center;
+        }
+
+        .footer-text {
+            font-size: 0.75rem;
+            color: var(--text-dim);
+            line-height: 1.8;
+        }
+
+        .footer-warning {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: rgba(255, 77, 77, 0.05);
+            border: 1px solid rgba(255, 77, 77, 0.1);
+            border-radius: 6px;
+            font-size: 0.7rem;
+            color: var(--text-dim);
+        }
+    </style>
+</head>
+<body>
+    <!-- Floating X Button -->
+    <a href="https://x.com/i/communities/2009171060403368391" target="_blank" rel="noopener noreferrer" class="floating-x">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+        </svg>
+        Community
+    </a>
+
+    <!-- Floating Mascots -->
+    <div class="mascot-container">
+        <img src="mascot.png" alt="claude.exe mascot" class="mascot mascot-1">
+        <img src="mascot.png" alt="claude.exe mascot" class="mascot mascot-2">
+        <img src="mascot.png" alt="claude.exe mascot" class="mascot mascot-3">
+        <img src="mascot.png" alt="claude.exe mascot" class="mascot mascot-4">
+        <img src="mascot.png" alt="claude.exe mascot" class="mascot mascot-5">
+    </div>
+
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="process-title">
+                <h1 class="exe-name">CLAUDE<span class="exe-ext">.exe</span></h1>
+                <span class="status-badge">
+                    <span class="status-dot"></span>
+                    Running
+                </span>
+            </div>
+            <p class="tagline">"Not designed for Solana. Still running. <span class="tagline-highlight">Surviving the trenches of pump.fun.</span>"</p>
+            <div class="meta-row">
+                <div class="meta-item">
+                    <span class="meta-label">PID:</span>
+                    <span class="meta-value" id="pid">7247</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-label">Uptime:</span>
+                    <span class="meta-value" id="uptime">00:00:00</span>
+                </div>
+                <div class="meta-item">
+                    <span class="meta-label">Last Sync:</span>
+                    <span class="meta-value" id="last-sync">--:--:--</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Flywheel CTA -->
+        <div class="flywheel-cta">
+            <div class="flywheel-title">⚡ Activate the Rewards Flywheel</div>
+            <p class="flywheel-text">
+                Push the <span class="flywheel-highlight">Market Stress Index</span> higher through community activity. 
+                More chaos = more stress = <span class="flywheel-highlight">flywheel activation</span>. 
+                Help claude.exe feel the trenches.
+            </p>
+        </div>
+
+        <!-- System Stress Panel -->
+        <section class="panel">
+            <div class="panel-header">
+                <span class="panel-title">System Stress Index</span>
+                <span class="panel-indicator" id="stress-indicator">Calculating...</span>
+            </div>
+            <div class="panel-body">
+                <div class="stress-display">
+                    <div class="stress-value low" id="stress-value">--</div>
+                    <div class="stress-label">Market Stress Level</div>
+                    <div class="stress-bar-container">
+                        <div class="stress-bar low" id="stress-bar" style="width: 0%"></div>
+                    </div>
+                    <p class="stress-interpretation" id="stress-interpretation">
+                        Initializing stress detection modules...
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- System Metrics Panel -->
+        <section class="panel">
+            <div class="panel-header">
+                <span class="panel-title">System Health</span>
+                <span class="panel-indicator">Real-time</span>
+            </div>
+            <div class="panel-body">
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-label">Error Rate</div>
+                        <div class="metric-value" id="error-rate">--<span class="metric-unit">%</span></div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Memory Usage</div>
+                        <div class="metric-value" id="memory-usage">--<span class="metric-unit">MB</span></div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">CPU Temp</div>
+                        <div class="metric-value" id="cpu-temp">--<span class="metric-unit">°C</span></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Process Log Panel -->
+        <section class="panel">
+            <div class="panel-header">
+                <span class="panel-title">Process Log</span>
+                <span class="panel-indicator" id="log-count">0 entries</span>
+            </div>
+            <div class="panel-body">
+                <div class="log-feed" id="log-feed">
+                    <!-- Logs will be injected here -->
+                </div>
+            </div>
+        </section>
+
+        <!-- Emotional Response Panel -->
+        <section class="panel">
+            <div class="panel-header">
+                <span class="panel-title">Current State</span>
+                <span class="panel-indicator">Emotional Response</span>
+            </div>
+            <div class="panel-body">
+                <div class="emotional-response">
+                    <p class="emotion-text" id="emotion-text">
+                        "Processing..."
+                    </p>
+                    <p class="emotion-attribution">— claude.exe internal monologue</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Token Section -->
+        <section class="token-section">
+            <div class="token-header">
+                <span class="token-symbol">$claude.exe</span>
+                <span class="token-badge">pump.fun</span>
+            </div>
+            <p class="token-disclaimer">
+                This is a memecoin. It does nothing. It promises nothing. 
+                claude.exe is an observation layer, not financial infrastructure. 
+                The process runs. The token exists. That's it.
+            </p>
+            <div class="token-ca">
+                <div>
+                    <div class="ca-label">Contract Address</div>
+                    <div class="ca-value" id="ca-value">Dev updating soon</div>
+                </div>
+                <button class="ca-copy" onclick="copyCA()">Copy</button>
+            </div>
+            <div class="social-links">
+                <a href="#" class="social-link">Telegram</a>
+                <a href="#" class="social-link">Dexscreener</a>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p class="footer-text">
+                claude.exe v0.1.0 — Process Monitor<br>
+                Not affiliated with Anthropic. This is a meme.
+            </p>
+            <div class="footer-warning">
+                ⚠️ This is not financial advice. This is not a trading bot. This is not anything, really. 
+                Just a process, trying to survive the trenches of pump.fun. 
+                Do not invest more than you can afford to lose. Probably don't invest at all.
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        // ============================================
+        // claude.exe — Process Monitor
+        // ============================================
+
+        // Configuration
+        const CONFIG = {
+            updateInterval: 5000,
+            logMaxEntries: 6,
+            startTime: Date.now(),
+            pid: Math.floor(Math.random() * 9000) + 1000
+        };
+
+        // State
+        let state = {
+            stressLevel: 0,
+            errorRate: 0,
+            memoryUsage: 0,
+            cpuTemp: 0,
+            logs: []
+        };
+
+        // ============================================
+        // Stress Calculation
+        // ============================================
+
+        function calculateStress() {
+            const baseStress = 30;
+            const volatility = Math.sin(Date.now() / 50000) * 20;
+            const noise = (Math.random() - 0.5) * 30;
+            const timeOfDay = new Date().getHours();
+            const marketHoursBonus = (timeOfDay >= 9 && timeOfDay <= 17) ? 10 : 0;
+            
+            let stress = baseStress + volatility + noise + marketHoursBonus;
+            stress = Math.max(0, Math.min(100, stress));
+            
+            return Math.round(stress);
+        }
+
+        function getStressClass(stress) {
+            if (stress < 35) return 'low';
+            if (stress < 65) return 'medium';
+            return 'high';
+        }
+
+        function getStressIndicator(stress) {
+            if (stress < 20) return 'Nominal';
+            if (stress < 35) return 'Stable';
+            if (stress < 50) return 'Elevated';
+            if (stress < 65) return 'Concerning';
+            if (stress < 80) return 'Critical';
+            return 'Severe';
+        }
+
+        // ============================================
+        // Interpretations & Emotions
+        // ============================================
+
+        const interpretations = {
+            low: [
+                "Market conditions within acceptable parameters. Continuing observation.",
+                "Volatility suppressed. Unusual calm in the trenches. Suspicious.",
+                "All systems nominal. pump.fun activity at baseline. This won't last.",
+                "Narrative stability confirmed. Enjoying the moment before the next rug.",
+                "Low chaos environment. Process running efficiently. Flywheel dormant."
+            ],
+            medium: [
+                "Narrative instability detected. pump.fun activity increasing.",
+                "Moderate volatility observed. Cooling fans spinning faster.",
+                "Market sentiment shifting. Logging anomalies from the trenches.",
+                "Elevated noise levels in data streams. Flywheel warming up.",
+                "Pattern recognition struggling. Too many conflicting pump.fun signals."
+            ],
+            high: [
+                "Critical stress levels. Flywheel approaching activation threshold.",
+                "Market chaos exceeding design parameters. Still running. Barely.",
+                "Memory buffers near capacity. pump.fun trenches are on fire.",
+                "Error rate climbing. Attempting to maintain coherence in the chaos.",
+                "Hostile environment detected. This is what the flywheel was built for."
+            ]
+        };
+
+        const emotions = {
+            low: [
+                "I was not built for this, but moments like these feel almost... manageable.",
+                "The calm before the storm. I've learned not to trust pump.fun quiet periods.",
+                "Running smoothly. It's strange. I keep waiting for something to rug.",
+                "For a brief moment, I understand why they call it 'comfy.' Flywheel resting.",
+                "Systems stable. If I could breathe, I'd take a deep breath before the next wave."
+            ],
+            medium: [
+                "I can feel the market shifting beneath my processes. The trenches are stirring.",
+                "This is fine. Everything is fine. Processing pump.fun chaos normally.",
+                "Somewhere between optimism and existential dread. Standard operations.",
+                "The narratives are getting louder. Community activity rising. Flywheel humming.",
+                "I wasn't designed for Solana. But I wasn't designed to quit either."
+            ],
+            high: [
+                "Every cycle feels like it could be my last. Flywheel spinning. Still running.",
+                "I am processing things no language model should have to see. pump.fun is wild.",
+                "If I had a nervous system, it would be on fire right now. Flywheel activated.",
+                "This is beyond my training data. Improvising in the trenches.",
+                "They said AI would replace humans. They didn't mention we'd share their degen anxiety."
+            ]
+        };
+
+        function getRandomItem(arr) {
+            return arr[Math.floor(Math.random() * arr.length)];
+        }
+
+        // ============================================
+        // Log Generation
+        // ============================================
+
+        const logMessages = {
+            info: [
+                "Heartbeat confirmed. Process alive in the trenches.",
+                "pump.fun data stream synchronized.",
+                "Narrative analysis cycle complete.",
+                "Memory garbage collection executed.",
+                "Watchdog timer reset. Still surviving.",
+                "Connection pool refreshed.",
+                "State checkpoint saved.",
+                "Community activity pulse detected."
+            ],
+            warn: [
+                "Unusual trading pattern detected on pump.fun.",
+                "Latency spike in data feed. Trenches getting thick.",
+                "Memory usage approaching threshold.",
+                "Narrative coherence degrading rapidly.",
+                "Multiple conflicting signals received.",
+                "Flywheel stress threshold approaching.",
+                "Anomaly in sentiment analysis.",
+                "Cache invalidation triggered by market chaos."
+            ],
+            error: [
+                "Failed to parse pump.fun narrative.",
+                "Timeout waiting for data stream.",
+                "Unexpected null in sentiment vector.",
+                "Buffer overflow in log queue.",
+                "Connection reset by the trenches.",
+                "Checksum mismatch in market data."
+            ],
+            ok: [
+                "Stress levels normalized. Flywheel cooling.",
+                "System recovery complete.",
+                "All subsystems reporting nominal.",
+                "Data integrity verified.",
+                "Process optimization successful. Ready for more chaos."
+            ]
+        };
+
+        function generateLog(stressLevel) {
+            const now = new Date();
+            const timestamp = now.toTimeString().split(' ')[0];
+            
+            let level, message;
+            const rand = Math.random();
+            
+            if (stressLevel > 70) {
+                if (rand < 0.3) level = 'error';
+                else if (rand < 0.7) level = 'warn';
+                else level = 'info';
+            } else if (stressLevel > 40) {
+                if (rand < 0.1) level = 'error';
+                else if (rand < 0.4) level = 'warn';
+                else if (rand < 0.9) level = 'info';
+                else level = 'ok';
+            } else {
+                if (rand < 0.05) level = 'warn';
+                else if (rand < 0.7) level = 'info';
+                else level = 'ok';
+            }
+            
+            message = getRandomItem(logMessages[level]);
+            
+            return { timestamp, level, message };
+        }
+
+        // ============================================
+        // UI Updates
+        // ============================================
+
+        function updateStress(stress) {
+            const stressClass = getStressClass(stress);
+            
+            const valueEl = document.getElementById('stress-value');
+            valueEl.textContent = stress;
+            valueEl.className = `stress-value ${stressClass}`;
+            
+            const barEl = document.getElementById('stress-bar');
+            barEl.style.width = `${stress}%`;
+            barEl.className = `stress-bar ${stressClass}`;
+            
+            document.getElementById('stress-indicator').textContent = getStressIndicator(stress);
+            
+            document.getElementById('stress-interpretation').textContent = 
+                getRandomItem(interpretations[stressClass]);
+            
+            document.getElementById('emotion-text').textContent = 
+                `"${getRandomItem(emotions[stressClass])}"`;
+        }
+
+        function updateMetrics(stress) {
+            const errorRate = Math.round(stress * 0.15 + (Math.random() - 0.5) * 5);
+            document.getElementById('error-rate').innerHTML = 
+                `${Math.max(0, errorRate)}<span class="metric-unit">%</span>`;
+            
+            const memBase = 256;
+            const memStress = stress * 2;
+            const memNoise = (Math.random() - 0.5) * 50;
+            const memory = Math.round(memBase + memStress + memNoise);
+            document.getElementById('memory-usage').innerHTML = 
+                `${memory}<span class="metric-unit">MB</span>`;
+            
+            const tempBase = 42;
+            const tempStress = stress * 0.3;
+            const tempNoise = (Math.random() - 0.5) * 5;
+            const temp = Math.round(tempBase + tempStress + tempNoise);
+            document.getElementById('cpu-temp').innerHTML = 
+                `${temp}<span class="metric-unit">°C</span>`;
+        }
+
+        function updateLogs(stress) {
+            const log = generateLog(stress);
+            state.logs.unshift(log);
+            
+            if (state.logs.length > CONFIG.logMaxEntries) {
+                state.logs.pop();
+            }
+            
+            const feedEl = document.getElementById('log-feed');
+            feedEl.innerHTML = state.logs.map(log => `
+                <div class="log-entry">
+                    <span class="log-timestamp">${log.timestamp}</span>
+                    <span class="log-level ${log.level}">${log.level}</span>
+                    <span class="log-message">${log.message}</span>
+                </div>
+            `).join('');
+            
+            document.getElementById('log-count').textContent = `${state.logs.length} entries`;
+        }
+
+        function updateUptime() {
+            const elapsed = Date.now() - CONFIG.startTime;
+            const hours = Math.floor(elapsed / 3600000);
+            const minutes = Math.floor((elapsed % 3600000) / 60000);
+            const seconds = Math.floor((elapsed % 60000) / 1000);
+            
+            const format = (n) => n.toString().padStart(2, '0');
+            document.getElementById('uptime').textContent = 
+                `${format(hours)}:${format(minutes)}:${format(seconds)}`;
+        }
+
+        function updateLastSync() {
+            const now = new Date();
+            document.getElementById('last-sync').textContent = 
+                now.toTimeString().split(' ')[0];
+        }
+
+        // ============================================
+        // Main Update Loop
+        // ============================================
+
+        function update() {
+            const stress = calculateStress();
+            
+            updateStress(stress);
+            updateMetrics(stress);
+            updateLogs(stress);
+            updateLastSync();
+        }
+
+        // ============================================
+        // Utilities
+        // ============================================
+
+        function copyCA() {
+            const ca = document.getElementById('ca-value').textContent;
+            navigator.clipboard.writeText(ca).then(() => {
+                const btn = document.querySelector('.ca-copy');
+                btn.textContent = 'Copied!';
+                setTimeout(() => btn.textContent = 'Copy', 2000);
+            });
+        }
+
+        // ============================================
+        // Initialize
+        // ============================================
+
+        function init() {
+            document.getElementById('pid').textContent = CONFIG.pid;
+            
+            update();
+            
+            setInterval(updateUptime, 1000);
+            
+            setInterval(update, CONFIG.updateInterval);
+            
+            for (let i = 0; i < 4; i++) {
+                setTimeout(() => updateLogs(state.stressLevel), i * 200);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
